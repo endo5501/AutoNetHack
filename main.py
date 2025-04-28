@@ -11,7 +11,7 @@ async def send_game_state(state_dict):
 
 
 def main():
-    minihack = MiniHackWrapper("MiniHack-Corridor-R2-v0")
+    minihack = MiniHackWrapper("MiniHack-Eat-v0")
     print("How to use:")
     print(minihack.get_action_description_list())
 

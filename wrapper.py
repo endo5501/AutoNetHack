@@ -114,7 +114,7 @@ ACTION_LOOKUP = {
 
 class MiniHackWrapper:
     def __init__(self, env_id="MiniHack-Room-5x5-v0"):
-        self.env = gym.make(env_id, observation_keys=("glyphs", "message", "blstats", "chars"))
+        self.env = gym.make(env_id, observation_keys=("glyphs", "message", "blstats", "chars", "inv_letters", "inv_strs"))
         self.last_obs = None
 
     # ゲームを1ターン進める
@@ -155,6 +155,16 @@ class MiniHackWrapper:
         msg_bytes = bytes(obs["message"])
         msg = msg_bytes.decode("utf-8").rstrip("\x00")
 
+        inv_items=""
+        inv_strs = obs.get("inv_strs",[])
+        inv_letters = obs.get("inv_letters",[])
+        for index, item_text in enumerate(inv_strs):
+            item = bytes(item_text)
+            item_str = item.decode("utf-8").rstrip("\x00")
+            if item_str == "":
+                break
+            inv_items += '{}: {}\n'.format(chr(inv_letters[index]), item_str)
+
         return{
             "level" : level.item(),
             "gold": gold.item(),
@@ -168,6 +178,7 @@ class MiniHackWrapper:
             "ac" : ac.item(),
             "hunger" : humger.item(),
             "turn" : turn.item(),
+            "inventry" : inv_items,
             "reward": reward
         }
 

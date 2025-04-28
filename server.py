@@ -47,6 +47,7 @@ def render_game_html(state):
     msg = state.get("message", "")
     turn = state.get("turn", "")
     reward = state.get("reward", "")
+    inventry = state.get("inventry", "")
 
     return f"""
 <html>
@@ -67,6 +68,7 @@ def render_game_html(state):
                 "Turn: " + (st.turn ?? "") + ", Reward: " + (st.reward ?? "");
             document.getElementById("msg").innerText  = "Msg: "+ (st.message ?? "");
             document.getElementById("board").innerText= st.board_text ?? "";
+            document.getElementById("inventry").innerText= st.inventry ?? "";
         }};
     </script>
   </head>
@@ -76,6 +78,7 @@ def render_game_html(state):
     <div id="turn">Trun: {turn}, Reward: {reward}</div>
     <div id="msg">Msg: {msg}</div>
     <pre id="board">{board}</pre>
+    <pre id="inventry">{inventry}</pre>
   </body>
 </html>
 """

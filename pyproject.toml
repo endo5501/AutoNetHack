@@ -5,6 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "fastapi>=0.115.12",
     "minihack>=1.0.2",
     "nle>=1.1.0",
+    "uvicorn>=0.34.2",
+    "websockets>=15.0.1",
 ]

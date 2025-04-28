@@ -7,7 +7,7 @@ ACTION_LOOKUP = {
     actions.CompassDirection.N : "Move North",
     actions.CompassDirection.E : "Move East",
     actions.CompassDirection.S : "Move South",
-    actions.CompassDirection.W : "Move East",
+    actions.CompassDirection.W : "Move West",
     actions.CompassDirection.NW : "Move Northwest",
     actions.CompassDirection.SE : "Move Southeast",
     actions.CompassDirection.SW : "Move Southwest",
@@ -114,28 +114,77 @@ ACTION_LOOKUP = {
 
 class MiniHackWrapper:
     def __init__(self, env_id="MiniHack-Room-5x5-v0"):
-        self.env = gym.make(env_id, observation_keys=("glyphs", "message", "blstats"))
+        self.env = gym.make(env_id, observation_keys=("glyphs", "message", "blstats", "chars"))
         self.last_obs = None
 
     # ゲームを1ターン進める
     def step(self, action_idx: int):
         obs, reward, done, truncated, info = self.env.step(action_idx)
         self.last_obs = obs
-        return self._to_text(obs), reward, done
+        return self._make_dict(obs, reward), done
 
     # ゲームを初期化
     def reset(self):
         obs, _ = self.env.reset()
         self.last_obs = obs
-        return self._to_text(obs)
+        return self._make_dict(obs, 0)
 
     # ---------- 内部ヘルパ ----------
+
+    def _make_dict(self, obs, reward):
+        """glyphs→ascii にして周囲を文字列化"""
+        chars = obs["chars"]  # (height, width)のnp.array
+        # 文字列に変換
+        board_text = "\n".join(
+            "".join(chr(c) for c in row)
+            for row in chars
+        )
+        level = obs["blstats"][2] # プレイヤーレベル
+        gold = obs["blstats"][3]  # 所持金
+        #strength = obs["blstats"][4] # 筋力
+        ac = obs["blstats"][5] # AC
+        exp = obs["blstats"][6] # 経験値
+        hp = obs["blstats"][10] # HP
+        max_hp = obs["blstats"][11] # 最大HP
+        pw = obs["blstats"][12] # 魔力
+        max_pw = obs["blstats"][13] # 最大魔力
+        humger = obs["blstats"][14] # 満腹度
+        turn = obs["blstats"][18] # ターン数
+
+        # メッセージ
+        msg_bytes = bytes(obs["message"])
+        msg = msg_bytes.decode("utf-8").rstrip("\x00")
+
+        return{
+            "level" : level.item(),
+            "gold": gold.item(),
+            "exp": exp.item(),
+            "board_text": board_text,
+            "message" : msg,
+            "hp" : hp.item(),
+            "max_hp" : max_hp.item(),
+            "pw" : pw.item(),
+            "max_pw" : max_pw.item(),
+            "ac" : ac.item(),
+            "hunger" : humger.item(),
+            "turn" : turn.item(),
+            "reward": reward
+        }
+
     def _to_text(self, obs) -> str:
         """glyphs→ascii にして周囲を文字列化、メッセージ・HP なども追記"""
-        desc = self.env.render(mode="ansi")  # 1 行文字列
+        chars = obs["chars"]  # (height, width)のnp.array
+        # 文字列に変換
+        board_text = "\n".join(
+            "".join(chr(c) for c in row)
+            for row in chars
+        )
+
         hp, maxhp = obs["blstats"][10], obs["blstats"][11]
-        msg = obs["message"].decode()
-        return f"{desc}\nHP:{hp}/{maxhp}\nMsg:{msg}"
+        msg_bytes = bytes(obs["message"])
+        msg = msg_bytes.decode()
+        return f"{board_text}\nHP:{hp}/{maxhp}\nMsg:{msg}"
+
 
     def valid_actions(self):
         return list(range(self.env.action_space.n))

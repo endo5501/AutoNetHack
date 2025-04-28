@@ -171,21 +171,6 @@ class MiniHackWrapper:
             "reward": reward
         }
 
-    def _to_text(self, obs) -> str:
-        """glyphs→ascii にして周囲を文字列化、メッセージ・HP なども追記"""
-        chars = obs["chars"]  # (height, width)のnp.array
-        # 文字列に変換
-        board_text = "\n".join(
-            "".join(chr(c) for c in row)
-            for row in chars
-        )
-
-        hp, maxhp = obs["blstats"][10], obs["blstats"][11]
-        msg_bytes = bytes(obs["message"])
-        msg = msg_bytes.decode()
-        return f"{board_text}\nHP:{hp}/{maxhp}\nMsg:{msg}"
-
-
     def valid_actions(self):
         return list(range(self.env.action_space.n))
 

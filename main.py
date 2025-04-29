@@ -14,10 +14,9 @@ def main():
     minihack = MiniHackWrapper("MiniHack-Eat-v0")
     print("How to use:")
     print(minihack.get_action_description_list())
+    data, done = minihack.reset()
+    asyncio.run(send_game_state(data))
 
-    asyncio.run(send_game_state(minihack.reset()))
-
-    done = False
     while not done:
         id = int(input())
         data, done = minihack.step(id)

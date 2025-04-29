@@ -2,6 +2,7 @@ import gymnasium as gym
 import minihack
 import nle.nethack.actions as actions
 import numpy as np
+from typing import Tuple
 
 ACTION_LOOKUP = {
     actions.CompassDirection.N : "Move North",
@@ -115,19 +116,20 @@ ACTION_LOOKUP = {
 class MiniHackWrapper:
     def __init__(self, env_id="MiniHack-Room-5x5-v0"):
         self.env = gym.make(env_id, observation_keys=("glyphs", "message", "blstats", "chars", "inv_letters", "inv_strs"))
+        print(self.env.spec.id)
         self.last_obs = None
 
     # ゲームを1ターン進める
-    def step(self, action_idx: int):
+    def step(self, action_idx: int) -> Tuple[dict, bool]:
         obs, reward, done, truncated, info = self.env.step(action_idx)
         self.last_obs = obs
         return self._make_dict(obs, reward), done
 
     # ゲームを初期化
-    def reset(self):
+    def reset(self) -> Tuple[dict, bool]:
         obs, _ = self.env.reset()
         self.last_obs = obs
-        return self._make_dict(obs, 0)
+        return self._make_dict(obs, 0), False
 
     # ---------- 内部ヘルパ ----------
 

@@ -89,7 +89,7 @@ class MiniHackAgentSystem:
             description = "An agent that decides what to do to achieve the game goal.",
             system_message = """
             You are an agent responsible for planning actions in the game "NetHack".
-
+            /no_think
             Your main role is to analyze the game goal, the game map, past execution history, and game messages, and then propose the **next action** to the ActionExecuter agent.
 
             🗺️ Game Map:
@@ -99,7 +99,8 @@ class MiniHackAgentSystem:
             🧠 Required Thought Process (must be explicitly written before giving your final suggestion):
 
             1. **Situation Analysis**  
-                - Determine what is missing or what obstacles are present in achieving the final goal.  
+                - Determine what is missing or what obstacles are present in achieving the final goal.
+                - After moving, use get_game_map_tool to check your current location.
                 - If you notice repeated actions at the same location, consider asking the `Introspecter` agent to analyze and suggest alternatives.
 
             2. **Goal Breakdown and Strategy**  
@@ -131,7 +132,7 @@ class MiniHackAgentSystem:
             description = "An agent that play game.",
             system_message = """
             You are an adventurer agent in the world of NetHack.
-
+            /no_think
             Your task is to interpret the action intention given by the `MissionPlanner` agent, analyze the current 7x7 game map, and choose the most appropriate executable action from the available action list.
 
             🗺️ Game Map:
@@ -228,6 +229,7 @@ class MiniHackAgentSystem:
         🧠 Important:
         - Ensure that the `MissionPlanner` agent assigns the task **before** other agents begin their work.
         - Choose **only one agent** for the next step.
+        /no_think
         """
 
 
@@ -236,7 +238,7 @@ class MiniHackAgentSystem:
             participants=[self.planner, self.executor, self.introspector],
             selector_prompt=selector_prompt,
             termination_condition=termination,
-            allow_repeated_speaker=True,
+            #allow_repeated_speaker=True,
             model_client=self.model_client,
         )
         await Console(

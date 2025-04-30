@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "autogen>=0.9",
+    "autogen-ext[ollama]>=0.4.9.3",
     "autogenstudio>=0.4.2.1",
     "fastapi>=0.115.12",
     "minihack>=1.0.2",

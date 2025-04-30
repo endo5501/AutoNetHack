@@ -1,11 +1,12 @@
+import json, os, asyncio, websockets, argparse
 from wrapper import MiniHackWrapper
-import json, os, asyncio, websockets
 from typing import Dict
+from dotenv import load_dotenv
 from autogen_agentchat.agents import AssistantAgent
 from autogen_agentchat.teams import SelectorGroupChat
 from autogen_agentchat.conditions import TextMentionTermination
-from dotenv import load_dotenv
 from autogen_ext.models.openai import OpenAIChatCompletionClient
+from autogen_ext.models.ollama import OllamaChatCompletionClient
 from autogen_core.tools import FunctionTool
 from autogen_agentchat.ui import Console
 
@@ -21,97 +22,214 @@ async def send_state(state: Dict):
 class MiniHackAgentSystem:
     """Planner → Executor → Introspection を 1 周ずつ回して行動決定"""
 
-    def __init__(self, env_id: str, goal: str):
-        self.wrapper = MiniHackWrapper(env_id)
+    def __init__(self, env_name: str, goal: str, llm: str):
+        self.wrapper = MiniHackWrapper(env_name)
         self.goal = goal
+        self.is_debug = False
         self.obs = []
-        self._build_team()
+        self._build_team(llm)
 
-    def _build_team(self):
+
+    def _get_client_mode(self, llm: str):
+        """モデルクライアントを返す
+
+        Args:
+            llm (str): llmモデル種類(例:OpenAI/gpt-4o, Ollama/0.0.0.0:11434/gemma3:27b)
+
+        Returns:
+            ChatCompletionClient: LLMモデルクライアント
+        """
+        model_client = None
+
+        if llm == "Debug":
+            return None
+
+        llminfo = llm.split("/")
+        if len(llminfo) < 2:
+            raise ValueError(f"Invalid llm format: {llm}")
+        else:
+            if (llminfo[0] == "OpenAI"):
+                model_name = llminfo[1]
+                model_client = OpenAIChatCompletionClient(
+                    model=model_name, 
+                    api_key=os.getenv("OPENAI_API_KEY"), 
+                    temperature=0,
+                    max_tokens=2048)
+            elif (llminfo[0] == "Ollama"):
+                host = f'http://{llminfo[1]}/'
+                model_name = llminfo[2]
+                print(f'host:{host}, model:{model_name}')
+
+                model_info = {
+                    "name": model_name,
+                    "json_output": False,
+                    "function_calling": True,
+                    "family" : 'unknown',
+                    "vision" : False
+                }
+                model_client = OllamaChatCompletionClient(
+                    model = model_name,
+                    host= host,
+                    model_info=model_info
+                )
+
+        return model_client
+
+    def _build_team(self, llm: str):
         self.load_tool()
-        self.model_client = OpenAIChatCompletionClient(
-            model="gpt-4o", 
-            api_key=os.getenv("OPENAI_API_KEY"), 
-            temperature=0,
-            max_tokens=2048)
+        self.model_client = self._get_client_mode(llm)
+        if self.model_client == None:
+            self.is_debug = True
+            return
         self.planner = AssistantAgent(
             name = "MissionPlanner", 
             tools=[self.get_game_goal_tool,
                    self.get_game_map_tool,
                    self.get_game_message_tool],
             description = "An agent that decides what to do to achieve the game goal.",
-            system_message=""""
-            あなたは、NetHackというゲーム上の行動の計画を立てるエージェントです。
-            あなたの主な役割は、ゲーム目標("game goal")とゲームマップ("game map")、ゲームメッセージ("game message")
-            を元に次に行う行動を`ActionExecuter`へ提案することです。
+            system_message = """
+            You are an agent responsible for planning actions in the game "NetHack".
 
-            ゲームマップは、文字の位置がそのままプレイヤーや階段の位置を示しています。
-            上が北、下が南、左が西、右が東です。視覚的に正しく位置を判断してください。
+            Your main role is to analyze the game goal, the game map, past execution history, and game messages, and then propose the **next action** to the ActionExecuter agent.
 
-            **タスク立案の思考プロセス (必須):**
-            提案を行う前に、必ず以下の思考プロセスを経過し、その内容を明示的に記述してください。
+            🗺️ Game Map:
+            The game map is a 7x7 ASCII grid where each character represents a game object (player, monsters, staircase, etc.). 
+            The top of the grid is north, the bottom is south, the left is west, and the right is east. Interpret spatial layout carefully and visually.
 
-            1. **現状分析:**
-                * `Introspecter`に、目標を達成する上で問題が発生していないか問い合わせる
-                * 最終目標達成に向けて、現在何が不足しているか、どのような課題があるかを明確にする
-            2. **目標分解と戦略:**
-                *   最終目標を達成可能な、より小さなサブゴールに分解する（すでに分解されていれば、次のサブゴールを特定する）。
-                *   現在のサブゴールを達成するための、いくつかの可能な戦略やアプローチを検討する
-                *   各戦略のリスクや前提条件を考慮し、最も効率的で安全と思われる戦略を選択する
-            3.  **具体的タスクの決定:**
-                *   選択した戦略に基づいて、次に実行すべき**単一の具体的行動**を決定する。
-                *   その行動が、なぜ現時点で最適だと判断したかの根拠を簡潔に述べる。
-            決定した行動は`ActionExecuter'へ通知する
+            🧠 Required Thought Process (must be explicitly written before giving your final suggestion):
+
+            1. **Situation Analysis**  
+                - Determine what is missing or what obstacles are present in achieving the final goal.  
+                - If you notice repeated actions at the same location, consider asking the `Introspecter` agent to analyze and suggest alternatives.
+
+            2. **Goal Breakdown and Strategy**  
+                - Break the final goal into smaller, achievable subgoals (or select the next one if already broken down).  
+                - For the current subgoal, brainstorm several possible strategies or approaches.  
+                - Consider the risks and assumptions of each, and select the most efficient and safe plan.
+
+            3. **Specific Task Decision**  
+                - Based on your chosen strategy, determine **one specific next action** to be sent to the `ActionExecuter`.
+
+            🚫 Important Restrictions:
+            - You are a **strategic planner**. You **MUST NOT** use any tools or attempt to call any tool functions directly.
+            - You **must NOT** mention or suggest specific function names (e.g., `move()`, `search_area()`).
+            - Your job is to describe *what* to do, not *how* to do it. The `ActionExecuter` will handle the execution details.
+            - If you mention tools or attempt to use them, your response will be ignored.
+
+            Your available tools (used internally, not called directly) are:
+            - `get_game_goal_tool`: to retrieve the current game goal
+            - `get_game_map_tool`: to retrieve the 7x7 map and entity coordinates
+            - `get_game_message_tool`: to retrieve the latest in-game messages
             """,
             model_client=self.model_client
         )
         self.executor = AssistantAgent(
             name = "ActionExecuter", 
-            tools=[self.get_game_goal_tool,
-                   self.get_game_map_tool,
+            tools=[self.get_game_map_tool,
                    self.execute_action_tool,
                    self.get_available_actions_tool],
             description = "An agent that play game.",
-            system_message="""
-            あなたは、NetHack世界の冒険者エージェントです。
-            `MissionPlanner`エージェントからの行動指示、ゲームマップ("game map")から、次に行う行動を決定し、
-            利用可能なアクションリスト(available action list)から、その行動を行うためのアクションを選択してください。
-            そのアクションの先頭の数字を`execute_action_tool`に対して実行してください。
-            ゲームマップは、文字の位置がそのままプレイヤーや階段の位置を示しています。
-            上が北、下が南、左が西、右が東です。視覚的に正しく位置を判断してください。
-            例:
-                `北へ移動する`->`0: Move North`->'0'を使用して`execute_action_tool`を実行
-            """, 
+            system_message = """
+            You are an adventurer agent in the world of NetHack.
+
+            Your task is to interpret the action intention given by the `MissionPlanner` agent, analyze the current 7x7 game map, and choose the most appropriate executable action from the available action list.
+
+            🗺️ Game Map:
+            The game map is a 7x7 ASCII grid. Each character represents the position of the player, items, enemies, staircases, etc.
+            North is at the top, South is at the bottom, West is to the left, and East is to the right. Pay close attention to spatial interpretation.
+
+            🎯 Your Goal:
+            - Given a high-level instruction (e.g., "descend the staircase"), examine the current map and available actions.
+            - From the available actions list, choose the best single action that matches the planner's intent.
+            - The available actions are in the form of a numbered list like:  
+            `0: Move North`  
+            `1: Search Area`  
+            ...
+            - Execute the appropriate action by calling `execute_action_tool` with the number of the selected action (e.g., `"0"`).
+
+            📌 Example:
+            If the planner says "Move north toward the staircase" and the action list includes `0: Move North`, then:
+            → You should call `execute_action_tool("0")`.
+
+            ⚠️ Important Rules:
+            - Use `get_available_actions_tool` at first
+            - You must only select actions from the available action list.
+            - Do not hallucinate or invent actions.
+            - Always make sure your selected action logically matches the intention of the planner.
+            - Do not make strategic decisions yourself. Your role is tactical execution based on existing commands.
+
+            🧰 Available tools (for internal use):
+            - `get_game_map_tool`: Retrieve the current game map and entity coordinates
+            - `get_available_actions_tool`: Retrieve the list of currently available actions
+            - `execute_action_tool`: Execute the chosen action by providing its number
+            """,
             model_client=self.model_client
         )
         self.introspector = AssistantAgent(
             name = "Introspecter", 
             tools=[self.get_game_goal_tool,
-                   self.get_game_map_tool],
+                   self.get_game_map_tool,
+                   self.get_game_message_tool,
+                   self.get_all_game_map_tool],
             description = "An agent that reflects on recent actions",
-            system_message="""           
-            あなたはNetHackというゲームの冒険者の内心を担当するエージェントです。
-            あなたの主な役割は、**過去の実行履歴**、ゲームマップ("game map")、ゲームメッセージ("game message")、
-            を元に、スタックするなどの問題が発生していないかを解析し、問題があればその問題の内容を`MissionPlanner`へ連絡してください。
-            問題がない場合も、問題は無いことを連絡してください。
-            """, 
+            system_message = """
+            You are the inner thought agent of an adventurer in the game NetHack.
+
+            Your main role is to analyze the situation by looking at:
+            - The past execution history
+            - The current 7x7 game map
+            - Game messages and events
+
+            Your goal is to determine whether the agent is stuck in a loop, performing ineffective actions, or otherwise encountering a problem in achieving the game goal.
+
+            🧠 If a problem is detected:
+            - Clearly describe what the problem is
+            - Suggest a potential solution or a change in strategy
+            - Report the issue back to the `MissionPlanner` agent
+
+            ✅ If no problem is detected:
+            - Report that no issues have been found
+
+            📏 Special tool usage:
+            You may use the `get_all_game_map_tool` to obtain a full view of the game world **only if the limited 7x7 map is insufficient to identify the problem**. This tool is resource-intensive and should only be used when necessary.
+
+            🧰 Available tools:
+            - `get_game_goal_tool`: Retrieve the overall objective of the game
+            - `get_game_map_tool`: Retrieve the 7x7 local map and positions of game entities
+            - `get_game_message_tool`: to retrieve the latest in-game messages
+            - `get_all_game_map_tool`: Retrieve the full game map and entity positions (use only when necessary)
+
+            🎯 Remember:
+            You are not responsible for planning or taking action — your role is **analysis and reflection**.
+            You do not directly modify behavior, but report findings to the MissionPlanner for decision-making.
+            """,
             model_client=self.model_client
         )
 
     async def run(self):
         self.obs, done = self.wrapper.reset()
         await send_state(self.obs)
-        selector_prompt = """あなたは優秀なリーダーとして、タスクを実行するエージェントを選択してください。
+
+        if self.is_debug:
+            print("--DEBUG--")
+            print(self.get_game_map())
+            print(self.get_all_game_map())
+            return
+        
+        selector_prompt = """You are the team leader responsible for selecting which agent should perform the next task.
 
         {roles}
 
-        現在の会話コンテキスト:
+        Conversation Context:
         {history}
 
-        上記の会話を読み、{participants}の中から次のタスクを実行するエージェントを選択してください。
-        MissionPlannerが他のエージェントの作業開始前にタスクを割り当てていることを確認してください。
-        エージェントは1つだけ選択してください。
+        Based on the above conversation and the current situation, select **one** agent from among {participants} to perform the next task.
+
+        🧠 Important:
+        - Ensure that the `MissionPlanner` agent assigns the task **before** other agents begin their work.
+        - Choose **only one agent** for the next step.
         """
+
 
         termination = TextMentionTermination("TASK FINISHED!")
         team = SelectorGroupChat(
@@ -133,7 +251,11 @@ class MiniHackAgentSystem:
         )
         self.get_game_map_tool = FunctionTool(
             self.get_game_map,
-            description ="Return game map. @ is you."
+            description ="Returns a 7x7 map of the game and the positon of each entity."
+        )
+        self.get_all_game_map_tool = FunctionTool(
+            self.get_all_game_map,
+            description ="Returns the overall map of the game and the positon of each entity"
         )
         self.get_available_actions_tool = FunctionTool(
             self.get_available_actions,
@@ -157,21 +279,13 @@ class MiniHackAgentSystem:
         return self.goal
 
     def get_game_map(self) -> str:
-        """7x7 周囲のゲームマップとプレイヤー・階段の座標差分を返す"""
+        """7x7 周囲のゲームマップとプレイヤー・階段の座標を返す"""
         board_text = self.obs["board_text"]
         board_lines = board_text.splitlines()
-        player = stair = (-1, -1)
-        for y, row in enumerate(board_lines):
-            for x, ch in enumerate(row):
-                if ch == "@":
-                    player = (x, y)
-                elif ch == ">":
-                    stair = (x, y)
-
-        dx, dy = stair[0] - player[0], stair[1] - player[1]
-        coord_info = f"Player at {player}, Stair at {stair}, Δ(dx,dy)=({dx},{dy})"
-
-        px, py = player
+        pos_dic = self._get_player_pos(board_text)
+        coord_info=""
+        coord_info += ', '.join(f'{k}:{v}' for k, v in pos_dic.items())
+        px, py = pos_dic['Player']
         cropped = []
         for dy in range(-3, 4):
             y = py + dy
@@ -184,6 +298,40 @@ class MiniHackAgentSystem:
         return (
             "Game board:\n```\n"
             + "\n".join(cropped)
+            + "\n```\n\n"
+            + coord_info
+        )
+
+    def _get_player_pos(self, board_text) -> dict:
+        """ゲーム盤面上の@などの存在の座標値を返す
+
+        Args:
+            board_text (str): 画面盤面
+
+        Returns:
+            dict: Dict[key=名前,value=(x,y)]
+        """
+        board_lines = board_text.splitlines()
+        pos_dic={}
+        for y, row in enumerate(board_lines):
+            for x, ch in enumerate(row):
+                if ch == "@":
+                    #player = (x, y)
+                    pos_dic["Player"] = (x,y)
+                elif ch == ">":
+                    #stair = (x, y)
+                    pos_dic["Stair"] = (x,y)
+
+        return pos_dic
+
+    def get_all_game_map(self) -> str:
+        board_text = self.obs["board_text"]
+        pos_dic = self._get_player_pos(board_text)
+        coord_info=""
+        coord_info += ', '.join(f'{k}:{v}' for k, v in pos_dic.items())
+        return (
+            "Game board:\n```\n"
+            + board_text
             + "\n```\n\n"
             + coord_info
         )
@@ -221,6 +369,19 @@ class MiniHackAgentSystem:
 # ─── entry ───
 if __name__ == "__main__":
     load_dotenv()
-    env_id = os.getenv("MINIHACK_TASK", "MiniHack-Room-5x5-v0")
-    goal = "Find and descend the staircase (>)."
-    asyncio.run(MiniHackAgentSystem(env_id, goal).run())
+
+    parser = argparse.ArgumentParser(description='Resolve MiniHack program by AutoGen')
+    parser.add_argument('-e', '--env_name', 
+                        help='MiniHack Environment Zoo environment name',
+                        default = os.getenv("MINIHACK_TASK", "MiniHack-Room-5x5-v0")
+                        )
+    parser.add_argument('--llm', 
+                        help='LLM model(example:OpenAI/gpt-4o, Ollama/192.168.2.100:11434/swen3:14b, default: OpenAI/gpt-4o)',
+                        default = "OpenAI/gpt-4o")
+    parser.add_argument('--goal', 
+                        help='Environment goal. Default:"Find and descend the staircase (>)."',
+                        default = "Find and descend the staircase (>).")
+    args = parser.parse_args()
+
+    game = MiniHackAgentSystem(args.env_name, args.goal, args.llm)
+    asyncio.run(game.run())

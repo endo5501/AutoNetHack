@@ -376,7 +376,7 @@ if __name__ == "__main__":
                         default = os.getenv("MINIHACK_TASK", "MiniHack-Room-5x5-v0")
                         )
     parser.add_argument('--llm', 
-                        help='LLM model(example:OpenAI/gpt-4o, Ollama/192.168.2.100:11434/swen3:14b, default: OpenAI/gpt-4o)',
+                        help='LLM model(example:OpenAI/gpt-4o, Ollama/192.168.2.100:11434/qwen3:14b, default: OpenAI/gpt-4o)',
                         default = "OpenAI/gpt-4o")
     parser.add_argument('--goal', 
                         help='Environment goal. Default:"Find and descend the staircase (>)."',

@@ -53,32 +53,45 @@ def render_game_html(state):
 <html>
   <head>
     <title>MiniHack Viewer</title>
+    <style>
+      body {{
+        font-family: monospace;
+        background-color: black;
+        color: white;
+        white-space: pre;
+      }}
+      .section {{
+        border: 1px solid white;
+        padding: 8px;
+        margin: 4px 0;
+      }}
+    </style>
     <script>
       let socket = new WebSocket("ws://localhost:8000/ws");
 
-        socket.onmessage = (ev) => {{
-            const st = JSON.parse(ev.data);
-            document.getElementById("level").innerText  = 
-                "LEVEL: "+ (st.level ?? "") + " Hunger: " + (st.hunger ?? "");
-            document.getElementById("hp").innerText = 
-                "HP: " + (st.hp ?? "") + "(" + (st.max_hp ?? "") + "), " +
-                "Pw: " + (st.pw ?? "") + "(" + (st.max_pw ?? "") + "), " +
-                "AC: " + (st.ac ?? "");
-            document.getElementById("turn").innerText = 
-                "Turn: " + (st.turn ?? "") + ", Reward: " + (st.reward ?? "");
-            document.getElementById("msg").innerText  = "Msg: "+ (st.message ?? "");
-            document.getElementById("board").innerText= st.board_text ?? "";
-            document.getElementById("inventry").innerText= st.inventry ?? "";
-        }};
+      socket.onmessage = (ev) => {{
+        const st = JSON.parse(ev.data);
+        document.getElementById("level").innerText  = 
+            "LEVEL: "+ (st.level ?? "") + " Hunger: " + (st.hunger ?? "");
+        document.getElementById("hp").innerText = 
+            "HP: " + (st.hp ?? "") + "(" + (st.max_hp ?? "") + "), " +
+            "Pw: " + (st.pw ?? "") + "(" + (st.max_pw ?? "") + "), " +
+            "AC: " + (st.ac ?? "");
+        document.getElementById("turn").innerText = 
+            "Turn: " + (st.turn ?? "") + ", Reward: " + (st.reward ?? "");
+        document.getElementById("msg").innerText  = "Msg: "+ (st.message ?? "");
+        document.getElementById("board").innerText= st.board_text ?? "";
+        document.getElementById("inventry").innerText= st.inventry ?? "";
+      }};
     </script>
   </head>
-  <body style="font-family:monospace; white-space:pre;">
-    <div id="level">LEVEL: {level}, Hunger; {hunger}</div>
-    <div id="hp">HP: {hp}({max_hp}), Pw: {pw}({max_pw}), AC:{ac}</div>
-    <div id="turn">Trun: {turn}, Reward: {reward}</div>
-    <div id="msg">Msg: {msg}</div>
-    <pre id="board">{board}</pre>
-    <pre id="inventry">{inventry}</pre>
+  <body>
+    <pre class="section" id="board">{board}</pre>
+    <div class="section" id="msg">Msg: {msg}</div>
+    <div class="section" id="level">LEVEL: {level}, Hunger: {hunger}</div>
+    <div class="section" id="hp">HP: {hp}({max_hp}), Pw: {pw}({max_pw}), AC:{ac}</div>
+    <div class="section" id="turn">Turn: {turn}, Reward: {reward}</div>
+    <pre class="section" id="inventry">{inventry}</pre>
   </body>
 </html>
 """

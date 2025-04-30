@@ -285,9 +285,8 @@ class MiniHackAgentSystem:
         board_text = self.obs["board_text"]
         board_lines = board_text.splitlines()
         pos_dic = self._get_player_pos(board_text)
-        coord_info=""
-        coord_info += ', '.join(f'{k}:{v}' for k, v in pos_dic.items())
-        px, py = pos_dic['Player']
+        coord_info=self._get_cord_info(board_text, pos_dic)
+        px, py = pos_dic['Player(@)']
         cropped = []
         for dy in range(-3, 4):
             y = py + dy
@@ -318,19 +317,16 @@ class MiniHackAgentSystem:
         for y, row in enumerate(board_lines):
             for x, ch in enumerate(row):
                 if ch == "@":
-                    #player = (x, y)
-                    pos_dic["Player"] = (x,y)
+                    pos_dic["Player(@)"] = (x,y)
                 elif ch == ">":
-                    #stair = (x, y)
-                    pos_dic["Stair"] = (x,y)
+                    pos_dic["DownStair(>)"] = (x,y)
 
         return pos_dic
 
     def get_all_game_map(self) -> str:
         board_text = self.obs["board_text"]
         pos_dic = self._get_player_pos(board_text)
-        coord_info=""
-        coord_info += ', '.join(f'{k}:{v}' for k, v in pos_dic.items())
+        coord_info=self._get_cord_info(board_text, pos_dic)
         return (
             "Game board:\n```\n"
             + board_text
@@ -353,11 +349,14 @@ class MiniHackAgentSystem:
             action_idx (int): 行動番号
 
         Returns:
-            str: "CONTINUE" or "TASK FINISHED!"
+            str: "CONTINUE:message" or "TASK FINISHED!"
         """
         self.obs, done = self.wrapper.step(action_idx)
         await send_state(self.obs)
-        return "CONTINUE" if not done else "TASK FINISHED!"
+
+        board_text = self.obs["board_text"]
+        pos_dic = self._get_player_pos(board_text)
+        return f'CONTINUE:{self._get_cord_info(board_text, pos_dic)}:{self.obs["message"]}' if not done else "TASK FINISHED!"
 
     def get_game_message(self) -> str:
         """ゲームメッセージを返す
@@ -366,7 +365,26 @@ class MiniHackAgentSystem:
             str: ゲームメッセージ
         """
         return f'Msg: {self.obs["message"]}'
+    
+    def _rel_dir(self, dx: int, dy: int) -> str:
+        """Δx,Δy から方位文字 N/E/S/W/NE... を返す"""
+        if dx == dy == 0:
+            return "HERE"
+        dir_x = "E" if dx > 0 else "W" if dx < 0 else ""
+        dir_y = "S" if dy > 0 else "N" if dy < 0 else ""
+        return dir_y + dir_x  # 例: "N", "SE"
 
+    def _get_cord_info(self, board_text : str, pos_dict: dict) -> str:
+        coord_info = ""
+        px, py = pos_dict["Player(@)"]
+
+        info_parts = []
+        for name, (x, y) in pos_dict.items():
+            dx, dy = x - px, y - py
+            info_parts.append(f"{name}:{self._rel_dir(dx,dy)}(dx={dx},dy={dy})")
+        coord_info = " / ".join(info_parts)
+
+        return coord_info
 
 # ─── entry ───
 if __name__ == "__main__":

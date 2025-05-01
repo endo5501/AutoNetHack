@@ -115,7 +115,7 @@ ACTION_LOOKUP = {
 
 class MiniHackWrapper:
     def __init__(self, env_id="MiniHack-Room-5x5-v0"):
-        self.env = gym.make(env_id, observation_keys=("glyphs", "message", "blstats", "chars", "inv_letters", "inv_strs"))
+        self.env = gym.make(env_id, observation_keys=("glyphs", "message", "blstats", "chars", "inv_letters", "inv_strs", "screen_descriptions"))
         print(self.env.spec.id)
         self.last_obs = None
 
@@ -131,6 +131,46 @@ class MiniHackWrapper:
         self.last_obs = obs
         return self._make_dict(obs, 0), False
 
+    def valid_actions(self):
+        return list(range(self.env.action_space.n))
+
+    def get_action_descriptions(self):
+        real_env = self.env.unwrapped
+        return {
+            idx: ACTION_LOOKUP.get(
+                real_env.actions[idx],
+                f'Unknown Action: {str(real_env.actions[idx])}'
+            )
+            for idx in self.valid_actions()
+        }
+    def get_action_description_list(self) -> str:
+        desp_list=""
+        descriptions = self.get_action_descriptions()
+        for idx in descriptions:
+            desp_list += f'{idx}: {descriptions[idx]}\n'
+        return desp_list
+
+    def get_symbol_descriptions(self):
+        chars = self.last_obs["chars"]
+        screen_descriptions = self.last_obs["screen_descriptions"]
+        symbols = {}
+        for r, row in enumerate(chars):
+            for c, col in enumerate(row):
+                symbol = chr(col)
+                if not symbol in symbols:
+                    description = bytes(screen_descriptions[r][c])
+                    symbols[symbol] = description.decode("utf-8").rstrip("\x00")
+        return symbols
+
+    def get_symbol_description_list(self) -> str:
+        description_list=""
+        for symbol, description in self.get_symbol_descriptions().items():
+            if symbol == " ":
+                continue
+            description_list += f'{symbol} : {description}\n'
+        return description_list
+
+
     # ---------- 内部ヘルパ ----------
 
     def _make_dict(self, obs, reward):
@@ -141,6 +181,10 @@ class MiniHackWrapper:
             "".join(chr(c) for c in row)
             for row in chars
         )
+        #print(f'x:{obs["blstats"][0]}')
+        #print(f'y:{obs["blstats"][1]}')
+        pos_x = obs["blstats"][0]
+        pos_y = obs["blstats"][1]
         level = obs["blstats"][2] # プレイヤーレベル
         gold = obs["blstats"][3]  # 所持金
         #strength = obs["blstats"][4] # 筋力
@@ -168,6 +212,7 @@ class MiniHackWrapper:
             inv_items += '{}: {}\n'.format(chr(inv_letters[index]), item_str)
 
         return{
+            "my_pos" : (int(pos_x.item()), (pos_y.item())),
             "level" : level.item(),
             "gold": gold.item(),
             "exp": exp.item(),
@@ -184,21 +229,3 @@ class MiniHackWrapper:
             "reward": reward
         }
 
-    def valid_actions(self):
-        return list(range(self.env.action_space.n))
-
-    def get_action_descriptions(self):
-        real_env = self.env.unwrapped
-        return {
-            idx: ACTION_LOOKUP.get(
-                real_env.actions[idx],
-                f'Unknown Action: {str(real_env.actions[idx])}'
-            )
-            for idx in self.valid_actions()
-        }
-    def get_action_description_list(self) -> str:
-        desp_list=""
-        descriptions = self.get_action_descriptions()
-        for idx in descriptions:
-            desp_list += f'{idx}: {descriptions[idx]}\n'
-        return desp_list

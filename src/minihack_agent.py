@@ -86,7 +86,8 @@ class MiniHackAgentSystem:
             name = "MissionPlanner", 
             tools=[self.get_game_goal_tool,
                    self.get_game_map_tool,
-                   self.get_game_message_tool],
+                   self.get_game_message_tool,
+                   self.get_symbol_description_list_tool],
             description = "An agent that decides what to do to achieve the game goal.",
             system_message = """
             You are an agent responsible for planning actions in the game "NetHack".
@@ -95,19 +96,21 @@ class MiniHackAgentSystem:
 
             🗺️ Game Map:
             The game map is a 7x7 ASCII grid where each character represents a game object (player, monsters, staircase, etc.). 
+            If you do not know map symbols, you must use 'get_symbol_description_list_tool'.
             The top of the grid is north, the bottom is south, the left is west, and the right is east. Interpret spatial layout carefully and visually.
 
             🧠 Required Thought Process (must be explicitly written before giving your final suggestion):
 
             1. **Situation Analysis**  
                 - Determine what is missing or what obstacles are present in achieving the final goal.
-                - After moving, use get_game_map_tool to check your current location.
                 - If you notice repeated actions at the same location, consider asking the `Introspecter` agent to analyze and suggest alternatives.
 
             2. **Goal Breakdown and Strategy**  
                 - Break the final goal into smaller, achievable subgoals (or select the next one if already broken down).  
                 - For the current subgoal, brainstorm several possible strategies or approaches.  
                 - Consider the risks and assumptions of each, and select the most efficient and safe plan.
+                - If you want to attack enemy, go to enemy.
+                - Don't stay in one place, always move around.
 
             3. **Specific Task Decision**  
                 - Based on your chosen strategy, determine **one specific next action** to be sent to the `ActionExecuter`.
@@ -117,12 +120,6 @@ class MiniHackAgentSystem:
             - You **must NOT** mention or suggest specific function names (e.g., `move()`, `search_area()`).
             - Your job is to describe *what* to do, not *how* to do it. The `ActionExecuter` will handle the execution details.
             - If you mention tools or attempt to use them, your response will be ignored.
-            - If you're in trouble, move. Nothing changes in this game unless you take action.
-
-            Your available tools (used internally, not called directly) are:
-            - `get_game_goal_tool`: to retrieve the current game goal
-            - `get_game_map_tool`: to retrieve the 7x7 map and entity coordinates
-            - `get_game_message_tool`: to retrieve the latest in-game messages
             """,
             model_client=self.model_client
         )
@@ -160,11 +157,6 @@ class MiniHackAgentSystem:
             - Do not hallucinate or invent actions.
             - Always make sure your selected action logically matches the intention of the planner.
             - Do not make strategic decisions yourself. Your role is tactical execution based on existing commands.
-
-            🧰 Available tools (for internal use):
-            - `get_game_map_tool`: Retrieve the current game map and entity coordinates
-            - `get_available_actions_tool`: Retrieve the list of currently available actions
-            - `execute_action_tool`: Execute the chosen action by providing its number
             """,
             model_client=self.model_client
         )
@@ -173,7 +165,8 @@ class MiniHackAgentSystem:
             tools=[self.get_game_goal_tool,
                    self.get_game_map_tool,
                    self.get_game_message_tool,
-                   self.get_all_game_map_tool],
+                   self.get_all_game_map_tool,
+                   self.get_symbol_description_list_tool],
             description = "An agent that reflects on recent actions",
             system_message = """
             You are the inner thought agent of an adventurer in the game NetHack.
@@ -196,12 +189,6 @@ class MiniHackAgentSystem:
             📏 Special tool usage:
             You may use the `get_all_game_map_tool` to obtain a full view of the game world **only if the limited 7x7 map is insufficient to identify the problem**. This tool is resource-intensive and should only be used when necessary.
 
-            🧰 Available tools:
-            - `get_game_goal_tool`: Retrieve the overall objective of the game
-            - `get_game_map_tool`: Retrieve the 7x7 local map and positions of game entities
-            - `get_game_message_tool`: to retrieve the latest in-game messages
-            - `get_all_game_map_tool`: Retrieve the full game map and entity positions (use only when necessary)
-
             🎯 Remember:
             You are not responsible for planning or taking action — your role is **analysis and reflection**.
             You do not directly modify behavior, but report findings to the MissionPlanner for decision-making.
@@ -216,7 +203,7 @@ class MiniHackAgentSystem:
         if self.is_debug:
             print("--DEBUG--")
             print(self.get_game_map())
-            print(self.get_all_game_map())
+            #print(self.get_all_game_map())
             #print(self.execute_action(0))
             return
         
@@ -268,11 +255,15 @@ class MiniHackAgentSystem:
         )
         self.execute_action_tool = FunctionTool(
             self.execute_action,
-            description ="""Play one turn of the game. Pass a action number (int) as the argument."""
+            description ="Play one turn of the game. Pass a action number (int) as the argument."
         )
         self.get_game_message_tool = FunctionTool(
             self.get_game_message,
             description ="Return game message."
+        )
+        self.get_symbol_description_list_tool = FunctionTool(
+            self.get_symbol_description_list,
+            description="Return game symbol list."
         )
 
     def get_game_goal(self) -> str:
@@ -287,9 +278,9 @@ class MiniHackAgentSystem:
         """7x7 周囲のゲームマップとプレイヤー・階段の座標を返す"""
         board_text = self.obs["board_text"]
         board_lines = board_text.splitlines()
-        pos_dic = self._get_player_pos(board_text)
-        coord_info=self._get_cord_info(board_text, pos_dic)
-        px, py = pos_dic['Player(@)']
+        pos_list = self._get_player_pos(board_text)
+        coord_info=self._get_cord_info(pos_list)
+        px, py = self.obs["my_pos"]
         cropped = []
         for dy in range(-3, 4):
             y = py + dy
@@ -306,7 +297,7 @@ class MiniHackAgentSystem:
             + coord_info
         )
 
-    def _get_player_pos(self, board_text) -> dict:
+    def _get_player_pos(self, board_text) -> list:
         """ゲーム盤面上の@などの存在の座標値を返す
 
         Args:
@@ -316,20 +307,25 @@ class MiniHackAgentSystem:
             dict: Dict[key=名前,value=(x,y)]
         """
         board_lines = board_text.splitlines()
-        pos_dic={}
-        for y, row in enumerate(board_lines):
-            for x, ch in enumerate(row):
-                if ch == "@":
-                    pos_dic["Player(@)"] = (x,y)
-                elif ch == ">":
-                    pos_dic["DownStair(>)"] = (x,y)
+        pos_list=[]
 
-        return pos_dic
+        target_list=[]
+        for symbol in self.wrapper.get_symbol_descriptions():
+            count = sum(row.count(symbol) for row in board_text)
+            if count < 4:
+                target_list.append(symbol)
+
+        for y, row in enumerate(board_lines):
+            for x, symbol in enumerate(row):
+                if symbol in target_list:
+                    pos_list.append((symbol, (x,y)))
+
+        return pos_list
 
     def get_all_game_map(self) -> str:
         board_text = self.obs["board_text"]
-        pos_dic = self._get_player_pos(board_text)
-        coord_info=self._get_cord_info(board_text, pos_dic)
+        pos_list = self._get_player_pos(board_text)
+        coord_info=self._get_cord_info(pos_list)
         return (
             "Game board:\n```\n"
             + board_text
@@ -367,6 +363,14 @@ class MiniHackAgentSystem:
         """
         return f'Msg: {self.obs["message"]}'
     
+    def get_symbol_description_list(self) -> str:
+        """ シンボルのリストを返す
+
+        Returns:
+            str: シンボルリスト
+        """
+        return self.wrapper.get_symbol_description_list()
+
     def _rel_dir(self, dx: int, dy: int) -> str:
         """Δx,Δy から方位文字 N/E/S/W/NE... を返す"""
         if dx == dy == 0:
@@ -375,18 +379,22 @@ class MiniHackAgentSystem:
         dir_y = "S" if dy > 0 else "N" if dy < 0 else ""
         return dir_y + dir_x  # 例: "N", "SE"
 
-    def _get_cord_info(self, board_text : str, pos_dict: dict) -> str:
+    def _get_cord_info(self, pos_list: list) -> str:
         coord_info = ""
-        px, py = pos_dict["Player(@)"]
+        px, py = self.obs["my_pos"]
 
         info_parts = []
         info_parts.append(f'HP:{self.obs["hp"]}/{self.obs["max_hp"]}')
-        for name, (x, y) in pos_dict.items():
-            if name == "Player(@)":
-                info_parts.append(f"{name}:HERE(x={px},y={py})")
-            else:
-                dx, dy = x - px, y - py
-                info_parts.append(f"{name}:{self._rel_dir(dx,dy)}(dx={dx},dy={dy})")
+        info_parts.append(f"@:HERE(x={px},y={py})")
+
+        for name, (x, y) in pos_list:
+            dx, dy = x - px, y - py
+            if (dx == 0 and dy == 0):
+                continue
+            info_parts.append(f"{name}:{self._rel_dir(dx,dy)}(dx={dx},dy={dy})")
+        #for name, (x, y) in pos_dict.items():
+        #    dx, dy = x - px, y - py
+        #    info_parts.append(f"{name}:{self._rel_dir(dx,dy)}(dx={dx},dy={dy})")
         coord_info = " ".join(info_parts)
 
         return coord_info

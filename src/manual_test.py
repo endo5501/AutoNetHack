@@ -22,6 +22,7 @@ def main():
     print("Action list:")
     print(minihack.get_action_description_list())
     data, done = minihack.reset()
+    #print(minihack.get_symbol_description_list())
     asyncio.run(send_game_state(data))
 
     while not done:

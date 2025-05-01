@@ -53,7 +53,7 @@ class MiniHackAgentSystem:
                 model_client = OpenAIChatCompletionClient(
                     model=model_name, 
                     api_key=os.getenv("OPENAI_API_KEY"), 
-                    temperature=0,
+                    temperature=0.3,
                     max_tokens=2048)
             elif (llminfo[0] == "Ollama"):
                 host = f'http://{llminfo[1]}/'
@@ -70,6 +70,7 @@ class MiniHackAgentSystem:
                 model_client = OllamaChatCompletionClient(
                     model = model_name,
                     host= host,
+                    temperature=0.3,
                     model_info=model_info
                 )
 
@@ -116,6 +117,7 @@ class MiniHackAgentSystem:
             - You **must NOT** mention or suggest specific function names (e.g., `move()`, `search_area()`).
             - Your job is to describe *what* to do, not *how* to do it. The `ActionExecuter` will handle the execution details.
             - If you mention tools or attempt to use them, your response will be ignored.
+            - If you're in trouble, move. Nothing changes in this game unless you take action.
 
             Your available tools (used internally, not called directly) are:
             - `get_game_goal_tool`: to retrieve the current game goal
@@ -215,6 +217,7 @@ class MiniHackAgentSystem:
             print("--DEBUG--")
             print(self.get_game_map())
             print(self.get_all_game_map())
+            #print(self.execute_action(0))
             return
         
         selector_prompt = """You are the team leader responsible for selecting which agent should perform the next task.
@@ -354,9 +357,7 @@ class MiniHackAgentSystem:
         self.obs, done = self.wrapper.step(action_idx)
         await send_state(self.obs)
 
-        board_text = self.obs["board_text"]
-        pos_dic = self._get_player_pos(board_text)
-        return f'CONTINUE:{self._get_cord_info(board_text, pos_dic)}:{self.obs["message"]}' if not done else "TASK FINISHED!"
+        return f'CONTINUE:\n{self.get_game_map()}\nMessage:{self.obs["message"]}' if not done else "TASK FINISHED!"
 
     def get_game_message(self) -> str:
         """ゲームメッセージを返す
@@ -380,8 +381,11 @@ class MiniHackAgentSystem:
 
         info_parts = []
         for name, (x, y) in pos_dict.items():
-            dx, dy = x - px, y - py
-            info_parts.append(f"{name}:{self._rel_dir(dx,dy)}(dx={dx},dy={dy})")
+            if name == "Player(@)":
+                info_parts.append(f"{name}:HERE(x={px},y={py})")
+            else:
+                dx, dy = x - px, y - py
+                info_parts.append(f"{name}:{self._rel_dir(dx,dy)}(dx={dx},dy={dy})")
         coord_info = " / ".join(info_parts)
 
         return coord_info

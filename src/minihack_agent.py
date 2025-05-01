@@ -380,13 +380,14 @@ class MiniHackAgentSystem:
         px, py = pos_dict["Player(@)"]
 
         info_parts = []
+        info_parts.append(f'HP:{self.obs["hp"]}/{self.obs["max_hp"]}')
         for name, (x, y) in pos_dict.items():
             if name == "Player(@)":
                 info_parts.append(f"{name}:HERE(x={px},y={py})")
             else:
                 dx, dy = x - px, y - py
                 info_parts.append(f"{name}:{self._rel_dir(dx,dy)}(dx={dx},dy={dy})")
-        coord_info = " / ".join(info_parts)
+        coord_info = " ".join(info_parts)
 
         return coord_info
 

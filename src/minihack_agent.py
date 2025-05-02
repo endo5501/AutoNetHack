@@ -94,6 +94,7 @@ class MiniHackAgentSystem:
                 self.get_game_map_tool,
                 self.get_game_message_tool,
                 self.get_symbol_description_list_tool,
+                self.get_map_memory_tool,
             ],
             description="An agent that decides what to do to achieve the game goal.",
             system_message="""
@@ -103,8 +104,14 @@ class MiniHackAgentSystem:
 
             🗺️ Game Map:
             The game map is a 7x7 ASCII grid where each character represents a game object (player, monsters, staircase, etc.). 
-            If you do not know map symbols, you must use 'get_symbol_description_list_tool'.
             The top of the grid is north, the bottom is south, the left is west, and the right is east. Interpret spatial layout carefully and visually.
+            If you do not know map symbols, you must use 'get_symbol_description_list_tool'.
+            By using `get_map_memory_tool`, you can check map memory. 
+                * "@" : You.
+                * "o" : Visited.
+                * "." : Not yet visited.
+                * " " : Out of sight. You may not be able to move there.
+                * "█" : Wall. You can't move it.
 
             🧠 Required Thought Process (must be explicitly written before giving your final suggestion):
 
@@ -117,10 +124,13 @@ class MiniHackAgentSystem:
                 - For the current subgoal, brainstorm several possible strategies or approaches.  
                 - Consider the risks and assumptions of each, and select the most efficient and safe plan.
                 - If you want to attack enemy, go to enemy.
-                - Don't stay in one place, always move around.
+                - If the goal is not found, use `get_map_memory_tool` to refer to the map memory and move to an unvisited area.
 
             3. **Specific Task Decision**  
                 - Based on your chosen strategy, determine **one specific next action** to be sent to the `ActionExecuter`.
+
+            ⚠️ Important Rules:
+            - Use `get_game_map_tool`, `get_symbol_description_list_tool` and 'get_map_memory_tool' at first
 
             🚫 Important Restrictions:
             - You are a **strategic planner**. You **MUST NOT** use any tools or attempt to call any tool functions directly.
@@ -177,6 +187,7 @@ class MiniHackAgentSystem:
                 self.get_game_message_tool,
                 self.get_all_game_map_tool,
                 self.get_symbol_description_list_tool,
+                self.get_map_memory_tool,
             ],
             description="An agent that reflects on recent actions",
             system_message="""
@@ -186,6 +197,13 @@ class MiniHackAgentSystem:
             - The past execution history
             - The current 7x7 game map
             - Game messages and events
+            - Map memory:
+                By using `get_map_memory_tool`, you can check map memory. 
+                * "@" : You.
+                * "o" : Visited.
+                * "." : Not yet visited.
+                * " " : Out of sight. You may not be able to move there.
+                * "█" : Wall. You can't move it.
 
             Your goal is to determine whether the agent is stuck in a loop, performing ineffective actions, or otherwise encountering a problem in achieving the game goal.
 
@@ -214,7 +232,8 @@ class MiniHackAgentSystem:
         if self.is_debug:
             print("--DEBUG--")
             print(self.get_game_map())
-            # print(self.get_all_game_map())
+            #print(self.get_all_game_map())
+            print(self.get_map_memory())
             # print(self.execute_action(0))
             return
 
@@ -269,6 +288,10 @@ class MiniHackAgentSystem:
         )
         self.get_symbol_description_list_tool = FunctionTool(
             self.get_symbol_description_list, description="Return game symbol list."
+        )
+        self.get_map_memory_tool = FunctionTool(
+            self.get_map_memory,
+            description='Return map memory.'
         )
 
     def get_game_goal(self) -> str:
@@ -370,6 +393,25 @@ class MiniHackAgentSystem:
         """
         return self.wrapper.get_symbol_description_list()
 
+    def get_all_map_memory(self) -> str:
+        map_mem_array = self.wrapper.get_map_memory()
+        map_mem = "\n".join("".join(row) for row in map_mem_array)
+        return "Memory board:\n```\n" + map_mem + "\n```"
+
+    def get_map_memory(self) -> str:
+        map_mem_array = self.wrapper.get_map_memory()
+        px, py = self.obs["my_pos"]
+        cropped = []
+        for dy in range(-3, 4):
+            y = py + dy
+            if 0 <= y < len(map_mem_array):
+                row = map_mem_array[y]
+                x_start = max(0, px - 3)
+                x_end = px + 4
+                cropped.append(row[x_start:x_end])
+        map_mem = "\n".join("".join(row) for row in cropped)
+        return "Memory board:\n```\n" + map_mem + "\n```"
+
     def _rel_dir(self, dx: int, dy: int) -> str:
         """Δx,Δy から方位文字 N/E/S/W/NE... を返す"""
         if dx == dy == 0:
@@ -414,8 +456,8 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         '--goal',
-        help='Environment goal. Default:"Find and descend the staircase (>)."',
-        default="Find and descend the staircase (>).",
+        help='Environment goal. Default:"Find and descend the staircase (>). Not (<)"',
+        default="Find and descend the staircase (>). Not (<)",
     )
     args = parser.parse_args()
 

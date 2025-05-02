@@ -37,6 +37,8 @@ def main():
         id = int(input())
         data, done = minihack.step(id)
         asyncio.run(send_game_state(data))
+        map_mem_array = minihack.get_map_memory()
+        print("\n".join("".join(row) for row in map_mem_array))
 
 
 if __name__ == "__main__":

@@ -134,18 +134,20 @@ class MiniHackWrapper:
     def step(self, action_idx: int) -> Tuple[dict, bool]:
         obs, reward, done, truncated, info = self.env.step(action_idx)
         self.last_obs = obs
+        self._update_map_mem(obs)
         return self._make_dict(obs, reward), done
 
     # ゲームを初期化
     def reset(self) -> Tuple[dict, bool]:
         obs, _ = self.env.reset()
         self.last_obs = obs
+        self.reset_map_mem(obs)
         return self._make_dict(obs, 0), False
 
-    def valid_actions(self):
+    def valid_actions(self) -> list:
         return list(range(self.env.action_space.n))
 
-    def get_action_descriptions(self):
+    def get_action_descriptions(self) -> dict:
         real_env = self.env.unwrapped
         return {
             idx: ACTION_LOOKUP.get(
@@ -161,7 +163,7 @@ class MiniHackWrapper:
             desp_list += f'{idx}: {descriptions[idx]}\n'
         return desp_list
 
-    def get_symbol_descriptions(self):
+    def get_symbol_descriptions(self) -> dict:
         chars = self.last_obs["chars"]
         screen_descriptions = self.last_obs["screen_descriptions"]
         symbols = {}
@@ -181,7 +183,35 @@ class MiniHackWrapper:
             description_list += f'{symbol} : {description}\n'
         return description_list
 
+    def reset_map_mem(self, obs) -> None:
+        self.map_mem = [[" " for _ in range(80)] for _ in range(22)]
+        self._update_map_mem(obs)
+
+    def get_map_memory(self) -> list:
+        return self.map_mem
+
+
+
     # ---------- 内部ヘルパ ----------
+
+    def _update_map_mem(self, obs):
+        chars = obs["chars"]
+        pos_x = obs["blstats"][0].item()
+        pos_y = obs["blstats"][1].item()
+        for r, row in enumerate(chars):
+            for c, cell in enumerate(row):
+                s = chr(cell)
+                if self.map_mem[r][c] == "@":
+                   self.map_mem[r][c] = "o"
+                if pos_x == c and pos_y == r:
+                   self.map_mem[r][c] = "@"
+                if self.map_mem[r][c] == " ":
+                    if s == "|" or s == "-":
+                        self.map_mem[r][c] = "█"
+                    elif s != " ":
+                        self.map_mem[r][c] = "."
+
+
 
     def _make_dict(self, obs, reward):
         """glyphs→ascii にして周囲を文字列化"""
@@ -217,7 +247,7 @@ class MiniHackWrapper:
             inv_items += '{}: {}\n'.format(chr(inv_letters[index]), item_str)
 
         return {
-            "my_pos": (int(pos_x.item()), (pos_y.item())),
+            "my_pos": (pos_x.item(), pos_y.item()),
             "level": level.item(),
             "gold": gold.item(),
             "exp": exp.item(),

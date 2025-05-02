@@ -5,13 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "autogen>=0.9",
-    "autogen-ext[ollama]>=0.4.9.3",
-    "autogenstudio>=0.4.2.1",
+    "autogen-agentchat>=0.5.5",
+    "autogen-ext[ollama,openai]>=0.4.9.3",
+    "dotenv>=0.9.9",
     "fastapi>=0.115.12",
+    "isort>=6.0.1",
     "minihack>=1.0.2",
-    "nle>=1.1.0",
-    "openai>=1.76.0",
     "uvicorn>=0.34.2",
     "websockets>=15.0.1",
 ]

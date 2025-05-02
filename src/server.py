@@ -1,13 +1,15 @@
+import json
+
+import uvicorn
 from fastapi import FastAPI, WebSocket
 from fastapi.responses import HTMLResponse
-import uvicorn
-import json
 from starlette.websockets import WebSocketDisconnect
 
 app = FastAPI()
 
-clients = set()          # つながってるブラウザを全部保持
-current_state = {}       # 最新盤面を保存（任意）
+clients = set()  # つながってるブラウザを全部保持
+current_state = {}  # 最新盤面を保存（任意）
+
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket):
@@ -15,8 +17,8 @@ async def ws_endpoint(ws: WebSocket):
     clients.add(ws)
     try:
         while True:
-            data = await ws.receive_text()           # ← ゲームランナーから届く
-            current_state.update(json.loads(data))   # (任意) 最新を保存
+            data = await ws.receive_text()  # ← ゲームランナーから届く
+            current_state.update(json.loads(data))  # (任意) 最新を保存
             # -------- ブラウザへ即プッシュ --------
             dead = []
             for c in clients:
@@ -29,11 +31,13 @@ async def ws_endpoint(ws: WebSocket):
     except:
         clients.discard(ws)
 
+
 @app.get("/")
 async def get():
     # HTMLページ返す
     # current_stateから盤面を描画
     return HTMLResponse(content=render_game_html(current_state))
+
 
 def render_game_html(state):
     board = state.get("board_text", "(no board)")

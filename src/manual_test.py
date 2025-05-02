@@ -1,5 +1,11 @@
-import json, os, asyncio, websockets, argparse
+import argparse
+import asyncio
+import json
+import os
+
+import websockets
 from dotenv import load_dotenv
+
 from wrapper import MiniHackWrapper
 
 
@@ -12,17 +18,19 @@ def main():
     load_dotenv()
 
     parser = argparse.ArgumentParser(description='MiniHack program by Manual[DEBUG]')
-    parser.add_argument('-e', '--env_name', 
-                        help='MiniHack Environment Zoo environment name',
-                        default = os.getenv("MINIHACK_TASK", "MiniHack-Room-5x5-v0")
-                        )
+    parser.add_argument(
+        '-e',
+        '--env_name',
+        help='MiniHack Environment Zoo environment name',
+        default=os.getenv("MINIHACK_TASK", "MiniHack-Room-5x5-v0"),
+    )
     args = parser.parse_args()
 
     minihack = MiniHackWrapper(args.env_name)
     print("Action list:")
     print(minihack.get_action_description_list())
     data, done = minihack.reset()
-    #print(minihack.get_symbol_description_list())
+    # print(minihack.get_symbol_description_list())
     asyncio.run(send_game_state(data))
 
     while not done:
